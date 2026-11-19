@@ -1,4 +1,4 @@
--- [[ YorozLua - Rivals Hub (Complete Code + Infinite Range Ragebot) ]] --
+-- [[ YorozLua - Rivals Hub (Voidspam + Ragebot Peek Fix) ]] --
 
 task.wait(1)
 
@@ -18,6 +18,11 @@ getgenv().Config = {
     TriggerbotEnabled = false,
     UndergroundEnabled = false,
     RagebotEnabled = false,
+    RagebotStatusEnabled = false,
+    StatusFont = "GothamBold",
+    VoidspamEnabled = false,
+    TimeInVoid = 0.5,
+    VoidPositionY = -14512312,
     FireRate = 0.0005,
     WeaponSlot = "Primary",
     EmoteID = 83194012641579,
@@ -47,7 +52,8 @@ getgenv().ChinaHatSettings = {
     hatColor = Color3.fromRGB(255, 105, 180), 
 }
 
-local underRef, stretchRef
+local underRef, stretchRef, voidspamRef, statusRef
+local currentRageTargetName = nil
 
 runS.RenderStepped:Connect(function()
     if getgenv().Config.cameraStretch then
@@ -60,7 +66,6 @@ runS.RenderStepped:Connect(function()
     end
 end)
 
--- Funkcja do odtwarzania animacji / tańców po ID
 local activeAnimationTrack = nil
 local function playCustomEmote(animId)
     pcall(function()
@@ -84,7 +89,6 @@ local function playCustomEmote(animId)
     end)
 end
 
--- Funkcja zarządzająca niewidzialnością postaci przy Ragebocie
 local function setCharacterInvisible(state)
     pcall(function()
         local char = lplr.Character
@@ -140,6 +144,50 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "YorozLuaUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = playerGui
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Name = "RagebotStatusLabel"
+statusLabel.Size = UDim2.new(0, 420, 0, 34)
+statusLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+statusLabel.Position = UDim2.new(0.5, 0, 0.64, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
+statusLabel.TextStrokeColor3 = Color3.fromRGB(10, 10, 14)
+statusLabel.TextStrokeTransparency = 0.25
+statusLabel.Font = Enum.Font[getgenv().Config.StatusFont] or Enum.Font.GothamBold
+statusLabel.TextSize = 18
+statusLabel.Text = ""
+statusLabel.Visible = false
+statusLabel.ZIndex = 200
+statusLabel.Parent = screenGui
+
+local fontList = {
+    "GothamBold",
+    "GothamBlack",
+    "Code",
+    "Arcade",
+    "SciFi",
+    "RobotoMono",
+}
+local currentFontIndex = table.find(fontList, getgenv().Config.StatusFont) or 1
+
+local function applyStatusFont(fontName)
+    local chosenFont = Enum.Font[fontName] or Enum.Font.GothamBold
+    getgenv().Config.StatusFont = chosenFont.Name
+    statusLabel.Font = chosenFont
+end
+
+local function updateRagebotStatusHUD()
+    local shouldShow = getgenv().Config.RagebotEnabled and getgenv().Config.RagebotStatusEnabled
+    statusLabel.Visible = shouldShow
+    if not shouldShow then return end
+
+    if currentRageTargetName and currentRageTargetName ~= "" then
+        statusLabel.Text = "Ragebot: attacking " .. currentRageTargetName
+    else
+        statusLabel.Text = "Ragebot: searching target"
+    end
+end
 
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Name = "ToggleMenuButton"
@@ -407,11 +455,11 @@ local tabLegit = addTab("🎯 Legitbot")
 local tabRage = addTab("🔥 Rage")
 local tabPlayer = addTab("👤 Player")
 local tabVisuals = addTab("👑 Visuals")
+local tabHud = addTab("🖥️ Hud")
 local tabSettings = addTab("⚙️ Settings")
 
 local triggersRef, rageRef, chinaRef
 
--- Dynamiczna sekcja Rage Settings
 local rageSettingsFrame = Instance.new("ScrollingFrame")
 rageSettingsFrame.Size = UDim2.new(1, -10, 0, 85)
 rageSettingsFrame.BackgroundTransparency = 1
@@ -447,11 +495,92 @@ weaponBtn.MouseButton1Click:Connect(function()
     saveConfig()
 end)
 
+local voidspamSettingsFrame = Instance.new("Frame")
+voidspamSettingsFrame.Size = UDim2.new(1, -10, 0, 66)
+voidspamSettingsFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+voidspamSettingsFrame.BorderSizePixel = 0
+voidspamSettingsFrame.Visible = getgenv().Config.RagebotEnabled and getgenv().Config.VoidspamEnabled
+voidspamSettingsFrame.ZIndex = 103
+voidspamSettingsFrame.Parent = tabRage
+
+local vsCorner = Instance.new("UICorner")
+vsCorner.CornerRadius = UDim.new(0, 6)
+vsCorner.Parent = voidspamSettingsFrame
+
+local vsTitle = Instance.new("TextLabel")
+vsTitle.Size = UDim2.new(1, -16, 0, 20)
+vsTitle.Position = UDim2.new(0, 8, 0, 4)
+vsTitle.BackgroundTransparency = 1
+vsTitle.Text = "--- Voidspam Settings ---"
+vsTitle.TextColor3 = Color3.fromRGB(0, 220, 255)
+vsTitle.Font = Enum.Font.GothamBold
+vsTitle.TextSize = 11
+vsTitle.TextXAlignment = Enum.TextXAlignment.Left
+vsTitle.ZIndex = 104
+vsTitle.Parent = voidspamSettingsFrame
+
+local timeVoidLabel = Instance.new("TextLabel")
+timeVoidLabel.Size = UDim2.new(0.65, -8, 0, 28)
+timeVoidLabel.Position = UDim2.new(0, 8, 0, 28)
+timeVoidLabel.BackgroundTransparency = 1
+timeVoidLabel.Text = "Time in Void (0.1 - 5): " .. tostring(getgenv().Config.TimeInVoid)
+timeVoidLabel.TextColor3 = Color3.fromRGB(220, 220, 230)
+timeVoidLabel.Font = Enum.Font.GothamMedium
+timeVoidLabel.TextSize = 12
+timeVoidLabel.TextXAlignment = Enum.TextXAlignment.Left
+timeVoidLabel.ZIndex = 104
+timeVoidLabel.Parent = voidspamSettingsFrame
+
+local timeVoidBox = Instance.new("TextBox")
+timeVoidBox.Size = UDim2.new(0.32, -8, 0, 28)
+timeVoidBox.Position = UDim2.new(0.67, 0, 0, 28)
+timeVoidBox.BackgroundColor3 = Color3.fromRGB(32, 32, 42)
+timeVoidBox.TextColor3 = Color3.fromRGB(0, 220, 255)
+timeVoidBox.Text = tostring(getgenv().Config.TimeInVoid)
+timeVoidBox.Font = Enum.Font.GothamBold
+timeVoidBox.TextSize = 12
+timeVoidBox.ClearTextOnFocus = false
+timeVoidBox.ZIndex = 104
+timeVoidBox.Parent = voidspamSettingsFrame
+
+local tvCorner = Instance.new("UICorner")
+tvCorner.CornerRadius = UDim.new(0, 5)
+tvCorner.Parent = timeVoidBox
+
+local function updateVoidspamVisibility()
+    voidspamSettingsFrame.Visible = (getgenv().Config.RagebotEnabled and getgenv().Config.VoidspamEnabled)
+end
+
+local function setTimeInVoid(val)
+    local num = tonumber(val)
+    if not num then
+        timeVoidBox.Text = tostring(getgenv().Config.TimeInVoid)
+        return
+    end
+    num = math.clamp(num, 0.1, 5)
+    num = math.floor(num * 100 + 0.5) / 100
+    getgenv().Config.TimeInVoid = num
+    timeVoidBox.Text = tostring(num)
+    timeVoidLabel.Text = "Time in Void (0.1 - 5): " .. tostring(num)
+    saveConfig()
+end
+
+timeVoidBox.FocusLost:Connect(function()
+    setTimeInVoid(timeVoidBox.Text)
+end)
+
 rageRef = addToggle(tabRage, "Ragebot & Fake Position", getgenv().Config.RagebotEnabled, function(val)
     getgenv().Config.RagebotEnabled = val
     getgenv().Config.Enabled = val
     rageSettingsFrame.Visible = val
+    updateVoidspamVisibility()
     setCharacterInvisible(val)
+    updateRagebotStatusHUD()
+end)
+
+voidspamRef = addToggle(tabRage, "Voidspam", getgenv().Config.VoidspamEnabled, function(val)
+    getgenv().Config.VoidspamEnabled = val
+    updateVoidspamVisibility()
 end)
 
 underRef = addToggle(tabRage, "Underground", getgenv().Config.UndergroundEnabled, function(val)
@@ -517,7 +646,6 @@ addButton(tabPlayer, "⏹️ Zatrzymaj Animację", function()
     end
 end)
 
--- Pole do wpisania własnego ID animacji
 local animTextBox = Instance.new("TextBox")
 animTextBox.Size = UDim2.new(1, -10, 0, 36)
 animTextBox.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
@@ -538,6 +666,30 @@ addButton(tabPlayer, "▶️ Odtwórz własną animację (z ID)", function()
     if id then
         playCustomEmote(id)
     end
+end)
+
+-- ==================== SEKCJA HUD ====================
+local hudSectionLabel = Instance.new("TextLabel")
+hudSectionLabel.Size = UDim2.new(1, 0, 0, 20)
+hudSectionLabel.BackgroundTransparency = 1
+hudSectionLabel.Text = "--- HUD Elements ---"
+hudSectionLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
+hudSectionLabel.Font = Enum.Font.GothamBold
+hudSectionLabel.TextSize = 12
+hudSectionLabel.Parent = tabHud
+
+statusRef = addToggle(tabHud, "Ragebot Status", getgenv().Config.RagebotStatusEnabled, function(val)
+    getgenv().Config.RagebotStatusEnabled = val
+    updateRagebotStatusHUD()
+end)
+
+local fontBtn = addButton(tabHud, "Status Font: " .. getgenv().Config.StatusFont, function() end)
+fontBtn.MouseButton1Click:Connect(function()
+    currentFontIndex = currentFontIndex % #fontList + 1
+    local chosenFont = fontList[currentFontIndex]
+    applyStatusFont(chosenFont)
+    fontBtn.Text = "Status Font: " .. chosenFont
+    saveConfig()
 end)
 
 chinaRef = addToggle(tabVisuals, "China Hat", getgenv().ChinaHatSettings.enabled, function(val)
@@ -595,9 +747,17 @@ addButton(tabSettings, "📂 Załaduj CFG", function()
     end)
     if triggersRef then triggersRef.SetState(getgenv().Config.TriggerbotEnabled) end
     if rageRef then rageRef.SetState(getgenv().Config.RagebotEnabled) end
+    if voidspamRef then voidspamRef.SetState(getgenv().Config.VoidspamEnabled) end
     if underRef then underRef.SetState(getgenv().Config.UndergroundEnabled) end
     if stretchRef then stretchRef.SetState(getgenv().Config.cameraStretch) end
+    if statusRef then statusRef.SetState(getgenv().Config.RagebotStatusEnabled) end
+    currentFontIndex = table.find(fontList, getgenv().Config.StatusFont) or 1
+    applyStatusFont(fontList[currentFontIndex])
+    fontBtn.Text = "Status Font: " .. fontList[currentFontIndex]
+    setTimeInVoid(getgenv().Config.TimeInVoid)
     weaponBtn.Text = "Weapon: " .. getgenv().Config.WeaponSlot
+    updateVoidspamVisibility()
+    updateRagebotStatusHUD()
 end)
 
 -- ==================== LOGIKA GRY ====================
@@ -632,7 +792,6 @@ task.spawn(function()
     end
 end)
 
--- Logika Underground
 task.spawn(function()
     while true do
         task.wait(0.2)
@@ -740,21 +899,42 @@ local function getClosestTarget()
 end
 
 local lastFire = 0
+local voidCycleStart = 0
+local inVoidPhase = true
+local lastVoidModeActive = false
+
 runS.Heartbeat:Connect(function()
+    local isVoidspamRageActive = getgenv().Config.RagebotEnabled and getgenv().Config.VoidspamEnabled
+
+    if isVoidspamRageActive and not lastVoidModeActive then
+        voidCycleStart = tick()
+        inVoidPhase = true
+    elseif not isVoidspamRageActive then
+        inVoidPhase = false
+    end
+    lastVoidModeActive = isVoidspamRageActive
+
     if lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") then
         local myRootPart = lplr.Character.HumanoidRootPart
-        if myRootPart.Position.Y < -40 and not getgenv().Config.UndergroundEnabled then
+        if myRootPart.Position.Y < -40 and not getgenv().Config.UndergroundEnabled and not isVoidspamRageActive then
             myRootPart.CFrame = CFrame.new(myRootPart.Position.X, 50, myRootPart.Position.Z)
             myRootPart.Velocity = Vector3.zero
         end
     end
 
-    if not getgenv().Config.RagebotEnabled then return end
+    if not getgenv().Config.RagebotEnabled then
+        currentRageTargetName = nil
+        updateRagebotStatusHUD()
+        return
+    end
 
     setCharacterInvisible(true)
 
     updateDeflection()
     local targetPlayer, targetRoot, targetHead = getClosestTarget()
+    currentRageTargetName = targetPlayer and (targetPlayer.DisplayName or targetPlayer.Name) or nil
+    updateRagebotStatusHUD()
+
     local desyncCF = nil
 
     if targetPlayer and targetRoot and targetHead then
@@ -789,13 +969,33 @@ runS.Heartbeat:Connect(function()
         if myRoot then desyncCF = myRoot.CFrame end
     end
 
-    if desyncCF and lplr.Character then
+    local effectiveCF = desyncCF
+    if isVoidspamRageActive then
+        local elapsed = tick() - voidCycleStart
+        local voidDuration = math.clamp(tonumber(getgenv().Config.TimeInVoid) or 0.5, 0.1, 5)
+        local peekDuration = 0.25
+
+        if elapsed <= voidDuration then
+            inVoidPhase = true
+            local basePos = (desyncCF and desyncCF.Position) or (lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") and lplr.Character.HumanoidRootPart.Position) or Vector3.zero
+            effectiveCF = CFrame.new(basePos.X, getgenv().Config.VoidPositionY, basePos.Z)
+        else
+            inVoidPhase = false
+            effectiveCF = desyncCF
+            if elapsed >= (voidDuration + peekDuration) then
+                voidCycleStart = tick()
+                inVoidPhase = true
+            end
+        end
+    end
+
+    if effectiveCF and lplr.Character then
         local myRoot = lplr.Character:FindFirstChild("HumanoidRootPart")
         if myRoot then
             local oldCF = myRoot.CFrame
             local oldVel = myRoot.Velocity
             local oldRotVel = myRoot.RotVelocity
-            myRoot.CFrame = desyncCF
+            myRoot.CFrame = effectiveCF
             runS:BindToRenderStep("__restore", 101, function()
                 if myRoot then
                     myRoot.CFrame = oldCF
@@ -808,6 +1008,8 @@ runS.Heartbeat:Connect(function()
     end
 
     if not targetPlayer or not targetHead or not targetRoot then return end
+    if isVoidspamRageActive and inVoidPhase then return end
+
     local pHum = targetPlayer.Character and targetPlayer.Character:FindFirstChildWhichIsA("Humanoid")
     if not pHum or pHum.Health <= 0 or pHum.Health <= -150 then return end
     if deflecting[targetPlayer] then return end
@@ -818,7 +1020,7 @@ runS.Heartbeat:Connect(function()
     if tick() - lastFire < getgenv().Config.FireRate then return end
     lastFire = tick()
     
-    local originPos = desyncCF and desyncCF.Position or targetRoot.Position
+    local originPos = (desyncCF and desyncCF.Position) or (effectiveCF and effectiveCF.Position) or targetRoot.Position
     local targetPos = targetHead.Position
     local aimCF = CFrame.lookAt(originPos, targetPos)
     local targetCF = targetHead.CFrame
@@ -859,4 +1061,4 @@ runS.RenderStepped:Connect(function()
     end)
 end)
 
-print("YorozLua Hub - Pełny skrypt z nieskończonym zasięgiem ragebota załadowany!")
+print("YorozLua Hub - Test peekDuration 0.25 przy Voidspamie!")
