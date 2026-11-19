@@ -1,4 +1,4 @@
--- [[ YorozLua - Rivals Hub (Fixed World Color Panel & Squares) ]] --
+-- [[ YorozLua - Rivals Hub (Complete Code + Infinite Range Ragebot) ]] --
 
 task.wait(1)
 
@@ -6,7 +6,6 @@ local repS = cloneref(game:GetService("ReplicatedStorage"))
 local plrs = cloneref(game:GetService("Players"))
 local runS = cloneref(game:GetService("RunService"))
 local ws = cloneref(game:GetService("Workspace"))
-local lighting = cloneref(game:GetService("Lighting"))
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local lplr = plrs.LocalPlayer
@@ -38,6 +37,9 @@ getgenv().Config = {
     MinBoundsY = 0,
     MaxBoundsY = 200,
     MaxDistanceFromTarget = 25,
+    cameraStretch = false,
+    stretchX = 100,
+    stretchY = 100,
 }
 
 getgenv().ChinaHatSettings = {
@@ -45,15 +47,57 @@ getgenv().ChinaHatSettings = {
     hatColor = Color3.fromRGB(255, 105, 180), 
 }
 
-getgenv().WorldColorSettings = {
-    enabled = false,
-    colors = {
-        Color3.fromRGB(0, 255, 100),   -- 1. Zielony
-        Color3.fromRGB(0, 150, 255),   -- 2. Niebieski
-        Color3.fromRGB(255, 100, 200)  -- 3. Różowy
-    },
-    activeStates = {false, false, false}
-}
+local underRef, stretchRef
+
+runS.RenderStepped:Connect(function()
+    if getgenv().Config.cameraStretch then
+        workspace.CurrentCamera.CFrame = workspace.CurrentCamera.CFrame * CFrame.new(
+            0, 0, 0,
+            getgenv().Config.stretchX/100, 0, 0,
+            0, getgenv().Config.stretchY/100, 0,
+            0, 0, 1
+        )
+    end
+end)
+
+-- Funkcja do odtwarzania animacji / tańców po ID
+local activeAnimationTrack = nil
+local function playCustomEmote(animId)
+    pcall(function()
+        local character = lplr.Character
+        if not character then return end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+
+        if activeAnimationTrack then
+            activeAnimationTrack:Stop()
+            activeAnimationTrack = nil
+        end
+
+        local anim = Instance.new("Animation")
+        anim.AnimationId = "rbxassetid://" .. tostring(animId)
+        
+        activeAnimationTrack = animator:LoadAnimation(anim)
+        activeAnimationTrack.Priority = Enum.AnimationPriority.Action
+        activeAnimationTrack:Play()
+    end)
+end
+
+-- Funkcja zarządzająca niewidzialnością postaci przy Ragebocie
+local function setCharacterInvisible(state)
+    pcall(function()
+        local char = lplr.Character
+        if not char then return end
+        for _, obj in ipairs(char:GetDescendants()) do
+            if obj:IsA("BasePart") or obj:IsA("Decal") then
+                if obj.Name ~= "HumanoidRootPart" and obj.Name ~= "ChinaHatPart" then
+                    obj.Transparency = state and 1 or 0
+                end
+            end
+        end
+    end)
+end
 
 local function saveConfig()
     pcall(function()
@@ -82,6 +126,12 @@ end
 
 -- ==================== TWORZENIE GUI ====================
 local playerGui = lplr:WaitForChild("PlayerGui")
+if playerGui:FindFirstChild("SmallVoidGui") then
+    playerGui.SmallVoidGui:Destroy()
+end
+if playerGui:FindFirstChild("YorozKeyUI") then
+    playerGui.YorozKeyUI:Destroy()
+end
 if playerGui:FindFirstChild("YorozLuaUI") then
     playerGui.YorozLuaUI:Destroy()
 end
@@ -219,7 +269,7 @@ local function addTab(name)
     tabContent.Size = UDim2.new(1, -10, 1, -10)
     tabContent.Position = UDim2.new(0, 5, 0, 5)
     tabContent.BackgroundTransparency = 1
-    tabContent.CanvasSize = UDim2.new(0, 0, 0, 1500)
+    tabContent.CanvasSize = UDim2.new(0, 0, 0, 1200)
     tabContent.ScrollBarThickness = 3
     tabContent.Visible = false
     tabContent.ZIndex = 102
@@ -355,10 +405,11 @@ end
 -- ==================== TWORZENIE ZAKŁADEK ====================
 local tabLegit = addTab("🎯 Legitbot")
 local tabRage = addTab("🔥 Rage")
+local tabPlayer = addTab("👤 Player")
 local tabVisuals = addTab("👑 Visuals")
 local tabSettings = addTab("⚙️ Settings")
 
-local triggersRef, rageRef, underRef, chinaRef
+local triggersRef, rageRef, chinaRef
 
 -- Dynamiczna sekcja Rage Settings
 local rageSettingsFrame = Instance.new("ScrollingFrame")
@@ -400,14 +451,93 @@ rageRef = addToggle(tabRage, "Ragebot & Fake Position", getgenv().Config.Ragebot
     getgenv().Config.RagebotEnabled = val
     getgenv().Config.Enabled = val
     rageSettingsFrame.Visible = val
+    setCharacterInvisible(val)
+end)
+
+underRef = addToggle(tabRage, "Underground", getgenv().Config.UndergroundEnabled, function(val)
+    getgenv().Config.UndergroundEnabled = val
+    if not val then
+        pcall(function()
+            local char = lplr.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                char.HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+            end
+        end)
+    end
 end)
 
 triggersRef = addToggle(tabLegit, "Triggerbot", getgenv().Config.TriggerbotEnabled, function(val)
     getgenv().Config.TriggerbotEnabled = val
 end)
 
-underRef = addToggle(tabRage, "Underground", getgenv().Config.UndergroundEnabled, function(val)
-    getgenv().Config.UndergroundEnabled = val
+-- ==================== SEKCJA PLAYER & ANIMACJE ====================
+local playerSectionLabel = Instance.new("TextLabel")
+playerSectionLabel.Size = UDim2.new(1, 0, 0, 20)
+playerSectionLabel.BackgroundTransparency = 1
+playerSectionLabel.Text = "--- Camera & Visual ---"
+playerSectionLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
+playerSectionLabel.Font = Enum.Font.GothamBold
+playerSectionLabel.TextSize = 12
+playerSectionLabel.Parent = tabPlayer
+
+stretchRef = addToggle(tabPlayer, "Camera Stretch", getgenv().Config.cameraStretch, function(val)
+    getgenv().Config.cameraStretch = val
+    saveConfig()
+end)
+
+local emoteSectionLabel = Instance.new("TextLabel")
+emoteSectionLabel.Size = UDim2.new(1, 0, 0, 20)
+emoteSectionLabel.BackgroundTransparency = 1
+emoteSectionLabel.Text = "--- Emotes & Animations ---"
+emoteSectionLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
+emoteSectionLabel.Font = Enum.Font.GothamBold
+emoteSectionLabel.TextSize = 12
+emoteSectionLabel.Parent = tabPlayer
+
+addButton(tabPlayer, "🕺 Taniec: Gangnam Style", function()
+    playCustomEmote(33380097)
+end)
+
+addButton(tabPlayer, "🌪️ Taniec: Tornado", function()
+    playCustomEmote(35767120)
+end)
+
+addButton(tabPlayer, "💃 Taniec: Line Dance", function()
+    playCustomEmote(318977779)
+end)
+
+addButton(tabPlayer, "🎸 Taniec: Air Guitar", function()
+    playCustomEmote(33380184)
+end)
+
+addButton(tabPlayer, "⏹️ Zatrzymaj Animację", function()
+    if activeAnimationTrack then
+        activeAnimationTrack:Stop()
+        activeAnimationTrack = nil
+    end
+end)
+
+-- Pole do wpisania własnego ID animacji
+local animTextBox = Instance.new("TextBox")
+animTextBox.Size = UDim2.new(1, -10, 0, 36)
+animTextBox.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+animTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+animTextBox.PlaceholderText = "Wpisz ID animacji..."
+animTextBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 130)
+animTextBox.Text = ""
+animTextBox.Font = Enum.Font.GothamMedium
+animTextBox.TextSize = 13
+animTextBox.Parent = tabPlayer
+
+local boxCorner = Instance.new("UICorner")
+boxCorner.CornerRadius = UDim.new(0, 6)
+boxCorner.Parent = animTextBox
+
+addButton(tabPlayer, "▶️ Odtwórz własną animację (z ID)", function()
+    local id = tonumber(animTextBox.Text)
+    if id then
+        playCustomEmote(id)
+    end
 end)
 
 chinaRef = addToggle(tabVisuals, "China Hat", getgenv().ChinaHatSettings.enabled, function(val)
@@ -447,104 +577,6 @@ chinaRef = addToggle(tabVisuals, "China Hat", getgenv().ChinaHatSettings.enabled
     end)
 end)
 
--- ==================== WORLD COLOR & ŚREDNI SZARY PANEL Z 3 KOLORAMI ====================
-local colorEffect = Instance.new("ColorCorrectionEffect")
-colorEffect.Name = "YorozWorldColor"
-colorEffect.Saturation = 0
-colorEffect.TintColor = Color3.new(1, 1, 1)
-colorEffect.Parent = lighting
-
-local function updateWorldColorEffect()
-    local wc = getgenv().WorldColorSettings
-    if not wc.enabled then
-        colorEffect.Saturation = 0
-        colorEffect.TintColor = Color3.new(1, 1, 1)
-        return
-    end
-
-    -- Gra robi się szara (efekt World Color)
-    colorEffect.Saturation = -0.85
-    
-    local activeCount = 0
-    local mixedColor = Color3.new(0, 0, 0)
-    
-    for i = 1, 3 do
-        if wc.activeStates[i] then
-            activeCount = activeCount + 1
-            mixedColor = mixedColor + wc.colors[i]
-        end
-    end
-    
-    if activeCount > 0 then
-        mixedColor = Color3.new(mixedColor.R / activeCount, mixedColor.G / activeCount, mixedColor.B / activeCount)
-        colorEffect.TintColor = mixedColor
-    else
-        -- Domyślna szarość świata, jeśli żaden z 3 kwadracików nie jest włączony
-        colorEffect.TintColor = Color3.fromRGB(180, 180, 180)
-    end
-end
-
--- ŚREDNI SZARY PANEL (zawierający 3 kwadraciki), który pojawia się pod World Color
-local squaresContainer = Instance.new("Frame")
-squaresContainer.Name = "SquaresContainer"
-squaresContainer.Size = UDim2.new(1, -10, 0, 52)
-squaresContainer.BackgroundColor3 = Color3.fromRGB(35, 35, 42) -- Średni szary odcień panelu
-squaresContainer.BorderSizePixel = 0
-squaresContainer.Visible = getgenv().WorldColorSettings.enabled
-squaresContainer.Parent = tabVisuals
-
-local sqContainerCorner = Instance.new("UICorner")
-sqContainerCorner.CornerRadius = UDim.new(0, 6)
-sqContainerCorner.Parent = squaresContainer
-
-local sqLayout = Instance.new("UIListLayout")
-sqLayout.FillDirection = Enum.FillDirection.Horizontal
-sqLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-sqLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-sqLayout.SortOrder = Enum.SortOrder.LayoutOrder
-sqLayout.Padding = UDim.new(0, 15)
-sqLayout.Parent = squaresContainer
-
-for i = 1, 3 do
-    local sqBtn = Instance.new("TextButton")
-    sqBtn.Size = UDim2.new(0, 38, 0, 38)
-    sqBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 85)
-    sqBtn.Text = ""
-    sqBtn.AutoButtonColor = false
-    sqBtn.Parent = squaresContainer
-
-    local sCorner = Instance.new("UICorner")
-    sCorner.CornerRadius = UDim.new(0, 8)
-    sCorner.Parent = sqBtn
-
-    local sqStroke = Instance.new("UIStroke")
-    sqStroke.Color = Color3.fromRGB(140, 140, 150)
-    sqStroke.Thickness = 2
-    sqStroke.Parent = sqBtn
-
-    sqBtn.MouseButton1Click:Connect(function()
-        local wc = getgenv().WorldColorSettings
-        wc.activeStates[i] = not wc.activeStates[i]
-        
-        if wc.activeStates[i] then
-            sqBtn.BackgroundColor3 = wc.colors[i]
-            sqStroke.Color = Color3.fromRGB(255, 255, 255)
-        else
-            sqBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 85)
-            sqStroke.Color = Color3.fromRGB(140, 140, 150)
-        end
-        
-        updateWorldColorEffect()
-    end)
-end
-
--- Przełącznik World Color (po włączeniu pokazuje średni szary panel z kwadracikami i szarzy świat)
-local worldColorToggleRef = addToggle(tabVisuals, "World Color", getgenv().WorldColorSettings.enabled, function(val)
-    getgenv().WorldColorSettings.enabled = val
-    squaresContainer.Visible = val -- Pokazuje/chowa średni szary panel
-    updateWorldColorEffect()
-end)
-
 addButton(tabSettings, "💾 Zapisz CFG", function() saveConfig() end)
 addButton(tabSettings, "📂 Załaduj CFG", function()
     pcall(function()
@@ -564,16 +596,15 @@ addButton(tabSettings, "📂 Załaduj CFG", function()
     if triggersRef then triggersRef.SetState(getgenv().Config.TriggerbotEnabled) end
     if rageRef then rageRef.SetState(getgenv().Config.RagebotEnabled) end
     if underRef then underRef.SetState(getgenv().Config.UndergroundEnabled) end
-    if worldColorToggleRef then 
-        worldColorToggleRef.SetState(getgenv().WorldColorSettings.enabled) 
-        squaresContainer.Visible = getgenv().WorldColorSettings.enabled
-    end
+    if stretchRef then stretchRef.SetState(getgenv().Config.cameraStretch) end
     weaponBtn.Text = "Weapon: " .. getgenv().Config.WeaponSlot
 end)
 
 -- ==================== LOGIKA GRY ====================
 local function handleDangerousItems()
-    for _, obj in ipairs(ws:GetDescendants()) do
+    local descendants = {}
+    pcall(function() descendants = ws:GetDescendants() end)
+    for _, obj in ipairs(descendants) do
         local name = obj.Name:lower()
         if name:find("kill") or name:find("lava") or name:find("death") or name:find("hazard") or name:find("damage") or name:find("chainsaw") or name:find("subspace tripmine") then
             pcall(function()
@@ -601,6 +632,25 @@ task.spawn(function()
     end
 end)
 
+-- Logika Underground
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if getgenv().Config.UndergroundEnabled then
+            pcall(function()
+                local char = lplr.Character
+                if char and char:FindFirstChild("HumanoidRootPart") then
+                    local root = char.HumanoidRootPart
+                    if root.Position.Y > -20 then
+                        root.CFrame = root.CFrame - Vector3.new(0, 4, 0)
+                    end
+                    root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                end
+            end)
+        end
+    end
+end)
+
 task.spawn(function()
     while true do
         task.wait(1)
@@ -617,6 +667,10 @@ local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 lplr.CharacterAdded:Connect(function(newChar)
     character = newChar
     humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    if getgenv().Config.RagebotEnabled then
+        task.wait(0.2)
+        setCharacterInvisible(true)
+    end
 end)
 
 local deflecting = {}
@@ -665,7 +719,7 @@ local function getClosestTarget()
     if not myRoot then return nil, nil, nil end
     
     local closestPlayer, closestRoot, closestHead = nil, nil, nil
-    local closestDist = 500
+    local closestDist = math.huge
     for _, player in plrs:GetPlayers() do
         if not isEnemy(player) then continue end
         local pChar = player.Character
@@ -689,13 +743,15 @@ local lastFire = 0
 runS.Heartbeat:Connect(function()
     if lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") then
         local myRootPart = lplr.Character.HumanoidRootPart
-        if myRootPart.Position.Y < -40 then
+        if myRootPart.Position.Y < -40 and not getgenv().Config.UndergroundEnabled then
             myRootPart.CFrame = CFrame.new(myRootPart.Position.X, 50, myRootPart.Position.Z)
             myRootPart.Velocity = Vector3.zero
         end
     end
 
     if not getgenv().Config.RagebotEnabled then return end
+
+    setCharacterInvisible(true)
 
     updateDeflection()
     local targetPlayer, targetRoot, targetHead = getClosestTarget()
@@ -802,3 +858,5 @@ runS.RenderStepped:Connect(function()
         end
     end)
 end)
+
+print("YorozLua Hub - Pełny skrypt z nieskończonym zasięgiem ragebota załadowany!")
